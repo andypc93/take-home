@@ -144,7 +144,7 @@ def test_dropped_stream_saves_nothing_until_resumed(client, image_id):
     dropped = stream(client, image_id, "Will I be saved?")
     events = iter(dropped.response)
     next(events)                                         # retry hint
-    last_id = next(events).decode().split("\n")[0].removeprefix("id: ")
+    last_id = next(events).decode().split("\n")[0].split("id: ", 1)[1]
     dropped.close()
     assert history(client, image_id) == []               # no partial answer stored
 
