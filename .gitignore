@@ -1,0 +1,15 @@
+# Installed packages
+venv/
+.venv/
+
+# Python caches
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Local data made by running the service
+visual_assistant.db*
+uploads/
+
+# Local settings
+.env

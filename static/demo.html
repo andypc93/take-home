@@ -1,0 +1,631 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Visual Assistant — test console</title>
+<script>
+  // Pick the theme before the page paints: the saved choice, else the system setting.
+  (function () {
+    var saved = null;
+    try { saved = localStorage.getItem("theme"); } catch (e) {}
+    var dark = saved ? saved === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  })();
+</script>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f5f6f8; --surface: #ffffff; --subtle: #f0f2f5; --border: #e3e7ed;
+    --text: #16202c; --muted: #64707f;
+    --accent: #2456d6; --on-accent: #ffffff;
+    --ok: #137a50; --ok-bg: #e3f4ec; --bad: #b42318; --bad-bg: #fdecea; --warn: #c98a12;
+  }
+  [data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #0f141b; --surface: #171e27; --subtle: #1f2833; --border: #2a3545;
+    --text: #e7ecf2; --muted: #94a0b0;
+    --accent: #7aa2ff; --on-accent: #0b1220;
+    --ok: #5fd3a0; --ok-bg: #123326; --bad: #ff9a8f; --bad-bg: #3f1b1a; --warn: #f0b84a;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  h1, h2 { margin: 0; font-weight: 600; }
+  h2 { font-size: 16px; }
+  .hint { color: var(--muted); font-size: 13.5px; margin: 2px 0 14px; }
+
+  /* ---- top bar ---- */
+  .bar { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 10px 18px; flex-wrap: wrap;
+         padding: 12px 24px; background: var(--surface); border-bottom: 1px solid var(--border); }
+  .bar h1 { font-size: 17px; flex: 1; min-width: 150px; }
+  .lamp { font-size: 13px; color: var(--muted); display: inline-flex; align-items: center; gap: 7px; }
+  .lamp::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .lamp.ok::before { background: var(--ok); }
+  .lamp.bad { color: var(--bad); } .lamp.bad::before { background: var(--bad); }
+  .switch { display: inline-flex; align-items: center; gap: 8px; padding: 4px 2px; border: 0; background: none;
+            color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
+  .switch .track { width: 38px; height: 22px; border-radius: 999px; background: var(--border); position: relative;
+                   transition: background .15s; }
+  .switch .track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px;
+                          border-radius: 50%; background: var(--surface); box-shadow: 0 1px 2px rgba(0,0,0,.3);
+                          transition: transform .15s; }
+  .switch[aria-checked="true"] .track { background: var(--accent); }
+  .switch[aria-checked="true"] .track::after { transform: translateX(16px); }
+
+  /* ---- layout ---- */
+  main { max-width: 1120px; margin: 0 auto; padding: 22px 24px 56px; display: grid; gap: 18px;
+         grid-template-columns: minmax(0, 1fr); }
+  @media (min-width: 960px) { main { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); } }
+  @media (max-width: 480px) { main { padding: 14px 12px 40px; } .bar { padding: 10px 12px; } }
+  .column { display: grid; gap: 18px; align-content: start; grid-template-columns: minmax(0, 1fr); min-width: 0; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px; min-width: 0; }
+
+  /* ---- controls ---- */
+  button { font: inherit; padding: 7px 13px; border-radius: 9px; cursor: pointer;
+           border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+  button:hover:not(:disabled) { background: var(--subtle); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
+  button.primary:hover:not(:disabled) { background: var(--accent); filter: brightness(1.08); }
+  button.danger { color: var(--bad); font-size: 13px; padding: 5px 11px; }
+  button.danger:hover:not(:disabled) { background: var(--bad-bg); border-color: var(--bad); }
+  input[type=text], input[type=number] { font: inherit; padding: 8px 11px; border-radius: 9px;
+           border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+  input[type=checkbox] { accent-color: var(--accent); width: 16px; height: 16px; vertical-align: -3px; }
+  .row { display: flex; gap: 8px 14px; flex-wrap: wrap; align-items: center; }
+
+  .status { font-size: 13.5px; padding: 8px 12px; border-radius: 9px; background: var(--subtle); overflow-wrap: anywhere; }
+  .status:empty { display: none; }
+  .status.ok { background: var(--ok-bg); color: var(--ok); }
+  .status.bad { background: var(--bad-bg); color: var(--bad); }
+
+  /* ---- image ---- */
+  .upload-body { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); }
+  @media (min-width: 560px) { .upload-body { grid-template-columns: 190px minmax(0, 1fr); } }
+  .print { display: block; aspect-ratio: 4 / 3; cursor: pointer; position: relative; overflow: hidden; text-align: center;
+           background: var(--subtle); border: 1.5px dashed var(--border); border-radius: 12px; }
+  .print input { position: absolute; left: 0; top: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+  .print:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .print:hover, .print.over { border-color: var(--accent); }
+  .print-empty { display: flex; flex-direction: column; justify-content: center; align-items: center;
+                 width: 100%; height: 100%; padding: 10px; font-weight: 600; }
+  .print-empty span { font-weight: 400; font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+  .print img { display: none; width: 100%; height: 100%; object-fit: contain; }
+  .print.has-image { border-style: solid; }
+  .print.has-image .print-empty { display: none; }
+  .print.has-image::after { content: "Click or drop to replace"; position: absolute; left: 0; right: 0; bottom: 0;
+           padding: 4px; font-size: 12px; background: rgba(15,20,27,.75); color: #fff; opacity: 0; }
+  .print.has-image:hover::after, .print.has-image:focus-within::after { opacity: 1; }
+  .analysis { margin: 10px 0 0; }
+  .facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px 14px; margin: 10px 0 0;
+           font-size: 13px; color: var(--muted); }
+  .facts dd { margin: 0; color: var(--text); overflow-wrap: anywhere; }
+  code, pre { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 12.5px; }
+  .tries { margin-top: 16px; }
+  .tries p { margin: 0 0 8px; font-size: 13.5px; color: var(--muted); }
+  .tries button { font-size: 13.5px; padding: 5px 11px; }
+
+  /* ---- conversation ---- */
+  #messages { display: grid; gap: 10px; margin-bottom: 14px; max-height: 420px; overflow-y: auto; }
+  #messages:empty::before { content: "No messages yet."; color: var(--muted); font-size: 13.5px; padding: 12px 0; }
+  .bubble { padding: 9px 13px; border-radius: 14px; max-width: 88%; overflow-wrap: anywhere; white-space: pre-wrap; }
+  .bubble.user { justify-self: end; background: var(--accent); color: var(--on-accent); border-bottom-right-radius: 4px; }
+  .bubble.assistant { justify-self: start; background: var(--subtle); border-bottom-left-radius: 4px; }
+  .bubble.error { justify-self: start; background: var(--bad-bg); color: var(--bad); border-bottom-left-radius: 4px; }
+  .bubble small { display: block; color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .bubble.live::after { content: ""; display: inline-block; width: 7px; height: 1em; margin-left: 2px;
+                        vertical-align: text-bottom; background: var(--accent); animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  #question { flex: 1; min-width: 180px; }
+  .options { margin-top: 14px; font-size: 14px; color: var(--muted); }
+  .options label { color: var(--text); }
+  .options input[type=number] { width: 60px; padding: 4px 8px; }
+  #stream-status { margin-top: 12px; }
+
+  /* ---- side column ---- */
+  .count { font-size: 13px; color: var(--muted); }
+  .count.bad { color: var(--bad); }
+  ol#history { margin: 12px 0 0; padding-left: 22px; font-size: 13.5px; max-height: 210px; overflow-y: auto; }
+  ol#history:empty::before { content: "Nothing stored yet."; color: var(--muted); margin-left: -22px; }
+  ol#history li { margin-bottom: 5px; overflow-wrap: anywhere; }
+  #dots { display: grid; grid-template-columns: repeat(auto-fill, 14px); gap: 4px; margin: 12px 0 0; }
+  #dots:empty { display: none; }
+  .dot { width: 14px; height: 14px; border-radius: 4px; background: var(--border); }
+  .dot.s2 { background: var(--ok); } .dot.s4 { background: var(--warn); } .dot.s429, .dot.s5 { background: var(--bad); }
+  #burst-status, #metrics-status { margin-top: 12px; }
+  details summary { cursor: pointer; font-weight: 600; font-size: 16px; list-style-position: outside; margin-left: 18px; }
+  details summary small { font-weight: 400; font-size: 13px; color: var(--muted); margin-left: 6px; overflow-wrap: anywhere; }
+  details[open] summary { margin-bottom: 12px; }
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 5px 10px 5px 0; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 500; }
+  td.n, th.n { text-align: right; padding-right: 0; }
+  pre#raw { background: var(--subtle); border-radius: 9px; padding: 12px; margin: 0; max-height: 300px;
+            overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
+
+  .foot { max-width: 1120px; margin: 0 auto; padding: 0 24px 32px; text-align: center;
+          font-size: 12px; font-style: italic; color: var(--muted); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .bubble.live::after { animation: none; }
+    .switch .track, .switch .track::after { transition: none; }
+  }
+</style>
+</head>
+<body>
+<header class="bar">
+  <h1>Visual Assistant</h1>
+  <span id="health" class="lamp">Checking server…</span>
+  <span id="streams" class="lamp">Open streams: –</span>
+  <button id="reset" class="danger" title="Delete every image, conversation and counter on this server">Reset all data</button>
+  <button id="stop" class="danger" title="Stop the server process">Stop server</button>
+  <button id="theme" class="switch" role="switch" aria-checked="false">
+    <span class="track" aria-hidden="true"></span>Dark mode
+  </button>
+</header>
+
+<main>
+  <div class="column">
+    <section class="card">
+      <h2>Image</h2>
+      <p class="hint">PNG, JPEG or GIF, up to 16 MB.</p>
+      <div class="upload-body">
+        <label id="drop-zone" class="print">
+          <input id="file" type="file" accept=".png,.jpg,.jpeg,.gif,image/*" aria-label="Choose an image to upload">
+          <img id="preview" alt="The uploaded image">
+          <span class="print-empty">Drop an image here<span>or click to choose one</span></span>
+        </label>
+        <div>
+          <div id="upload-status" class="status" role="status"></div>
+          <p id="info-analysis" class="analysis">Upload an image and the assistant's description appears here.</p>
+          <dl id="upload-info" class="facts" hidden>
+            <dt>Image id</dt><dd><code id="info-id"></code></dd>
+            <dt>Stored as</dt><dd id="info-type"></dd>
+          </dl>
+        </div>
+      </div>
+      <div class="tries">
+        <p>Or send a test file to see how the server judges it:</p>
+        <div class="row">
+          <button id="renamed">GIF named .png</button>
+          <button id="fake">Text named .png</button>
+          <button id="wrong-type">.exe file</button>
+          <button id="empty">Empty file</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Conversation</h2>
+      <p class="hint" id="chat-hint">Upload an image to start asking about it.</p>
+      <div id="messages" aria-live="polite"></div>
+      <form id="chat-form" class="row">
+        <input id="question" type="text" placeholder="Ask something about the image" maxlength="4000" disabled
+               aria-label="Question">
+        <button id="send" class="primary" disabled>Send</button>
+      </form>
+      <div class="options row">
+        <label><input id="stream" type="checkbox" checked> Stream the answer</label>
+        <label><input id="drop" type="checkbox"> Cut the connection after
+          <input id="drop-after" type="number" value="5" min="1" max="50" aria-label="Events before the connection is cut"> events</label>
+        <button id="resume" disabled>Resume stream</button>
+      </div>
+      <div id="stream-status" class="status" role="status"></div>
+    </section>
+  </div>
+
+  <div class="column">
+    <section class="card">
+      <h2>Stored history</h2>
+      <p class="hint">What the database holds for this image.</p>
+      <div class="row">
+        <button id="history-refresh" disabled>Refresh</button>
+        <button id="history-clear" disabled>Clear</button>
+        <span id="history-count" class="count">0 messages</span>
+      </div>
+      <ol id="history"></ol>
+    </section>
+
+    <section class="card">
+      <h2>Rate limit</h2>
+      <p class="hint">Sends 70 requests at once. Only 60 a minute are allowed, so the last ones are refused.</p>
+      <button id="burst">Send 70 requests</button>
+      <div id="dots" aria-hidden="true"></div>
+      <div id="burst-status" class="status" role="status"></div>
+    </section>
+
+    <details class="card">
+      <summary>Request counts</summary>
+      <div class="table-wrap">
+        <table><thead><tr><th>Method</th><th>Route</th><th>Status</th><th class="n">Count</th></tr></thead>
+          <tbody id="metrics"></tbody></table>
+      </div>
+      <div id="metrics-status" class="status" role="status"></div>
+    </details>
+
+    <details class="card">
+      <summary id="raw-title">Last response</summary>
+      <pre id="raw">The raw reply from the server shows up here after each action.</pre>
+    </details>
+  </div>
+</main>
+
+<footer class="foot">“You figure it all out a lot faster if you just get moving than if you sit around trying to create a perfect plan.”</footer>
+
+<script>
+const $ = id => document.getElementById(id);
+const JSON_HEADERS = {"Content-Type": "application/json"};
+let imageId = null, lastEventId = null, controller = null, liveBubble = null, eventLog = [], streamQuestion = "";
+
+// ---- light / dark switch ----
+function applyTheme(dark, remember) {
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  $("theme").setAttribute("aria-checked", String(dark));
+  if (remember) { try { localStorage.setItem("theme", dark ? "dark" : "light"); } catch {} }
+}
+applyTheme(document.documentElement.dataset.theme === "dark", false);
+$("theme").onclick = () => applyTheme(document.documentElement.dataset.theme !== "dark", true);
+
+// ---- reset: wipe the server's data and start over ----
+$("reset").onclick = async () => {
+  if (!confirm("Delete every uploaded image, conversation and counter on this server? This cannot be undone.")) return;
+  $("reset").disabled = true;
+  const {resp, body} = await api("POST", "/reset", {headers: {"X-Reset-Confirm": "yes"}});
+  if (!resp.ok) {
+    $("reset").disabled = false;
+    setStatus("upload-status", "Reset did not run. " + describeError(resp, body), "bad");
+    return;
+  }
+  // Reload for a clean page; the note is shown once after the reload.
+  try { sessionStorage.setItem("reset-note",
+        `Everything was reset: ${body.removed.images} images and ${body.removed.turns} conversation turns deleted.`); } catch {}
+  location.reload();
+};
+try {
+  const note = sessionStorage.getItem("reset-note");
+  if (note) { sessionStorage.removeItem("reset-note"); queueMicrotask(() => setStatus("upload-status", note, "ok")); }
+} catch {}
+
+// ---- stop: shut the server down ----
+$("stop").onclick = async () => {
+  if (!confirm("Stop the server? This page stops working until the server is started again.")) return;
+  $("stop").disabled = true;
+  const {resp, body} = await api("POST", "/shutdown", {headers: {"X-Shutdown-Confirm": "yes"}});
+  if (!resp.ok) {
+    $("stop").disabled = false;
+    setStatus("upload-status", "The server was not stopped. " + describeError(resp, body), "bad");
+    return;
+  }
+  clearInterval(healthTimer); clearInterval(metricsTimer);
+  $("health").textContent = "Server stopped"; $("health").className = "lamp bad";
+  $("streams").hidden = true; $("reset").hidden = true; $("stop").hidden = true;
+  const card = document.createElement("section"), title = document.createElement("h2"),
+        how = document.createElement("p"), command = document.createElement("code");
+  card.className = "card";
+  title.textContent = "Server stopped";
+  command.textContent = "python app.py";
+  how.className = "analysis";
+  how.append("Your data is kept. To start the server again, run ", command,
+             " in the project folder, then reload this page.");
+  card.append(title, how);
+  document.querySelector("main").replaceChildren(card);
+};
+
+// ---- helpers ----
+function setStatus(id, text, kind) {
+  const el = $(id);
+  el.textContent = text || "";
+  el.className = "status" + (kind ? " " + kind : "");
+}
+function showRaw(label, status, body) {
+  const note = document.createElement("small");
+  note.textContent = `${label} returned HTTP ${status}`;
+  $("raw-title").replaceChildren("Last response", note);
+  $("raw").textContent = typeof body === "string" ? body : JSON.stringify(body, null, 2);
+}
+function describeError(resp, body) {
+  const err = body && body.error;
+  const retry = resp.headers.get("Retry-After");
+  return (err ? `HTTP ${resp.status}, ${err.code}: ${err.message}` : `HTTP ${resp.status}`)
+       + (retry ? ` Try again in ${retry}s.` : "");
+}
+// If the server asks for an API key (401 invalid_api_key), ask for it once, keep it
+// for this browser session and send it on every call.
+let apiKey = null, keyDeclinedAt = 0;
+try { apiKey = sessionStorage.getItem("api-key"); } catch {}
+async function authFetch(path, options = {}) {
+  const send = key => fetch(path, key
+      ? {...options, headers: {...options.headers, Authorization: "Bearer " + key}} : options);
+  const used = apiKey;
+  const resp = await send(used);
+  if (resp.status !== 401) return resp;
+  const body = await resp.clone().json().catch(() => null);
+  if (!body || !body.error || body.error.code !== "invalid_api_key") return resp;
+  if (apiKey === used) {                      // no other call has obtained a key meanwhile
+    if (Date.now() - keyDeclinedAt < 5000) return resp;
+    const entered = (prompt(used ? "That API key was not accepted. Enter the API key:"
+                                 : "This server requires an API key. Enter the API key:") || "").trim();
+    if (!entered) { keyDeclinedAt = Date.now(); return resp; }
+    apiKey = entered;
+    try { sessionStorage.setItem("api-key", apiKey); } catch {}
+  }
+  return send(apiKey);
+}
+async function api(method, path, options = {}) {
+  const resp = await (path === "/reset" || path === "/shutdown" ? fetch : authFetch)(path, {method, ...options});
+  const text = await resp.text();
+  let body;
+  try { body = JSON.parse(text); } catch { body = text; }
+  showRaw(`${method} ${path}`, resp.status, body);
+  return {resp, body};
+}
+function addBubble(kind, text, note) {
+  const el = document.createElement("div");
+  el.className = "bubble " + kind;
+  el.textContent = text;
+  if (note) { const small = document.createElement("small"); small.textContent = note; el.append(small); }
+  $("messages").append(el);
+  el.scrollIntoView({block: "nearest"});
+  return el;
+}
+// Splits the prompt tokens the same way the server counts them: a flat 85 for the
+// image, about one token per 4 characters of the question, and the rest is history.
+const IMAGE_TOKENS = 85;
+function usageNote(usage, question) {
+  if (!usage) return "";
+  const asked = Math.max(1, Math.floor(question.length / 4));
+  const history = Math.max(0, usage.prompt_tokens - IMAGE_TOKENS - asked);
+  return `Sent ${usage.prompt_tokens} tokens: ${IMAGE_TOKENS} image + ${asked} question + ${history} history. ` +
+         `Answer: ${usage.completion_tokens} tokens. Total ${usage.total_tokens}.`;
+}
+
+// ---- upload ----
+async function uploadFile(file) {
+  const form = new FormData();
+  form.append("image", file, file.name);
+  setStatus("upload-status", `Uploading ${file.name} (${file.size} bytes)…`);
+  const {resp, body} = await api("POST", "/upload", {body: form});
+  if (!resp.ok) { setStatus("upload-status", `Rejected "${file.name}". ` + describeError(resp, body), "bad"); return; }
+
+  imageId = body.image_id;
+  const named = (file.name.split(".").pop() || "").toLowerCase().replace("jpg", "jpeg");
+  const real = body.content_type.split("/")[1];
+  setStatus("upload-status", `Accepted "${file.name}".` + (named === real ? "" :
+            ` Named .${file.name.split(".").pop()} but the content is ${real.toUpperCase()}, so it was stored as ${real.toUpperCase()}.`), "ok");
+  $("info-id").textContent = body.image_id;
+  $("info-type").textContent = `${body.content_type}, ${body.size} bytes`;
+  $("info-analysis").textContent = body.analysis.choices[0].message.content;
+  $("upload-info").hidden = false;
+
+  const preview = $("preview");
+  preview.src = URL.createObjectURL(file);
+  preview.style.display = "block";
+  $("drop-zone").classList.add("has-image");
+
+  $("messages").replaceChildren();
+  $("chat-hint").textContent = "Each answer quotes your previous question, which shows the history is used.";
+  for (const id of ["question", "send", "history-refresh", "history-clear"]) $(id).disabled = false;
+  $("resume").disabled = true;
+  setStatus("stream-status", "");
+  refreshHistory();
+}
+$("file").addEventListener("change", e => { if (e.target.files[0]) uploadFile(e.target.files[0]); e.target.value = ""; });
+const zone = $("drop-zone");
+zone.addEventListener("dragover", e => { e.preventDefault(); zone.classList.add("over"); });
+zone.addEventListener("dragleave", () => zone.classList.remove("over"));
+zone.addEventListener("drop", e => {
+  e.preventDefault(); zone.classList.remove("over");
+  if (e.dataTransfer.files[0]) uploadFile(e.dataTransfer.files[0]);
+});
+$("fake").onclick = () => uploadFile(new File(["this is not an image"], "fake.png", {type: "image/png"}));
+// A valid 1x1 GIF, deliberately given a .png name: accepted and stored as GIF.
+const TINY_GIF = Uint8Array.from(atob("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"), c => c.charCodeAt(0));
+$("renamed").onclick = () => uploadFile(new File([TINY_GIF], "really-a-gif.png", {type: "image/png"}));
+$("wrong-type").onclick = () => uploadFile(new File(["MZ"], "program.exe"));
+$("empty").onclick = () => uploadFile(new File([], "empty.png", {type: "image/png"}));
+
+// ---- conversation ----
+$("chat-form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const question = $("question").value.trim();
+  if (!question || !imageId) return;
+  $("question").value = "";
+  addBubble("user", question);
+  $("send").disabled = true;
+  try {
+    if ($("stream").checked) await startStream(question);
+    else await plainChat(question);
+  } finally { $("send").disabled = false; }
+});
+
+async function plainChat(question) {
+  const {resp, body} = await api("POST", `/chat/${imageId}`,
+                                 {headers: JSON_HEADERS, body: JSON.stringify({question})});
+  if (!resp.ok) { addBubble("error", describeError(resp, body)); return; }
+  addBubble("assistant", body.choices[0].message.content, usageNote(body.usage, question));
+  refreshHistory();
+}
+
+async function startStream(question) {
+  liveBubble = addBubble("assistant", "");
+  lastEventId = null; eventLog = []; streamQuestion = question;
+  const dropAfter = $("drop").checked ? Math.max(1, parseInt($("drop-after").value, 10) || 5) : null;
+  await readStream({headers: JSON_HEADERS, body: JSON.stringify({question})}, dropAfter);
+}
+
+$("resume").onclick = async () => {
+  $("resume").disabled = true;
+  await readStream({headers: {"Last-Event-ID": lastEventId}}, null);
+};
+
+// Reads one SSE response. fetch is used instead of EventSource because the endpoint is POST.
+async function readStream(options, dropAfter) {
+  controller = new AbortController();
+  const path = `/chat-stream/${imageId}`;
+  let received = 0, finished = false;
+  liveBubble.classList.add("live");
+  try {
+    const resp = await authFetch(path, {method: "POST", signal: controller.signal, ...options});
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => null);
+      showRaw(`POST ${path}`, resp.status, body);
+      liveBubble.className = "bubble error";
+      liveBubble.textContent = describeError(resp, body);
+      return;
+    }
+    const reader = resp.body.getReader(), decoder = new TextDecoder();
+    let buffer = "";
+    while (!finished) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, {stream: true});
+      let cut;
+      while ((cut = buffer.indexOf("\n\n")) >= 0) {
+        const block = buffer.slice(0, cut);
+        buffer = buffer.slice(cut + 2);
+        const result = handleEvent(block);
+        if (result === "done") { finished = true; break; }
+        if (result === "data") received++;
+        if (dropAfter && received >= dropAfter) {
+          controller.abort();                       // simulate a lost connection
+          throw new DOMException("dropped", "AbortError");
+        }
+      }
+    }
+    setStatus("stream-status", "Stream complete.", "ok");
+    $("resume").disabled = true;
+  } catch (err) {
+    if (err.name === "AbortError") {
+      setStatus("stream-status",
+        `Connection cut after ${received} events. Nothing was stored. ` +
+        `Choose "Resume stream" to carry on from here.`, "bad");
+      $("resume").disabled = !lastEventId;
+    } else {
+      setStatus("stream-status", "Stream failed: " + err.message, "bad");
+    }
+  } finally {
+    liveBubble.classList.remove("live");
+    showRaw(`POST ${path} (events)`, 200, eventLog.join("\n"));
+    refreshHistory();
+  }
+}
+
+// Handles one SSE block. Returns "data", "done" or null.
+function handleEvent(block) {
+  let id = null, data = null;
+  for (const line of block.split("\n")) {
+    if (line.startsWith("id: ")) id = line.slice(4);
+    else if (line.startsWith("data: ")) data = line.slice(6);
+  }
+  if (data === null) return null;                   // e.g. the "retry:" hint
+  if (id) lastEventId = id;
+  eventLog.push(`${id || "-"}  ${data.length > 110 ? data.slice(0, 110) + "…" : data}`);
+  if (data === "[DONE]") return "done";
+  const chunk = JSON.parse(data);
+  if (chunk.error) {
+    liveBubble.className = "bubble error";
+    liveBubble.textContent = `${chunk.error.code}: ${chunk.error.message}`;
+    return "data";
+  }
+  const choice = chunk.choices && chunk.choices[0];
+  if (choice && choice.delta && choice.delta.content) liveBubble.firstChild
+      ? liveBubble.firstChild.textContent += choice.delta.content
+      : liveBubble.append(document.createTextNode(choice.delta.content));
+  if (chunk.usage) {
+    const small = document.createElement("small");
+    small.textContent = usageNote(chunk.usage, streamQuestion);
+    liveBubble.append(small);
+  }
+  return "data";
+}
+
+// ---- stored history ----
+async function refreshHistory() {
+  if (!imageId) return;
+  const resp = await authFetch(`/chat/${imageId}/history`);
+  if (!resp.ok) { $("history-count").textContent = `Blocked (HTTP ${resp.status})`; $("history-count").className = "count bad"; return; }
+  const body = await resp.json();
+  $("history-count").textContent = `${body.count} message${body.count === 1 ? "" : "s"}`;
+  $("history-count").className = "count";
+  $("history").replaceChildren(...body.messages.map(message => {
+    const li = document.createElement("li"), who = document.createElement("b");
+    who.textContent = message.role + ": ";
+    li.append(who, message.content);
+    return li;
+  }));
+}
+$("history-refresh").onclick = refreshHistory;
+$("history-clear").onclick = async () => {
+  await api("DELETE", `/chat/${imageId}/history`);
+  $("messages").replaceChildren();
+  refreshHistory();
+};
+
+// ---- rate limit ----
+$("burst").onclick = async () => {
+  $("burst").disabled = true;
+  $("dots").replaceChildren();
+  setStatus("burst-status", "Sending…");
+  const target = imageId || "00000000-0000-4000-8000-000000000000";
+  const counts = {};
+  let retryAfter = null;
+  for (let batch = 0; batch < 7; batch++) {
+    const results = await Promise.all(Array.from({length: 10}, () => authFetch(`/chat/${target}/history`)));
+    for (const resp of results) {
+      counts[resp.status] = (counts[resp.status] || 0) + 1;
+      if (resp.status === 429) retryAfter = resp.headers.get("Retry-After");
+      const dot = document.createElement("span");
+      dot.className = "dot s" + (resp.status === 429 ? "429" : String(resp.status)[0]);
+      dot.title = `HTTP ${resp.status}`;
+      $("dots").append(dot);
+    }
+  }
+  const allowed = 70 - (counts[429] || 0);
+  setStatus("burst-status", counts[429]
+      ? `${allowed} allowed, ${counts[429]} refused. Chat is blocked for ${retryAfter}s.`
+      : `All 70 allowed. The limit was not reached.`, counts[429] ? "bad" : "ok");
+  $("burst").disabled = false;
+};
+
+// ---- server status and request counts ----
+async function refreshHealth() {
+  const lamp = $("health");
+  try {
+    const resp = await fetch("/health");
+    const body = await resp.json();
+    lamp.textContent = resp.ok ? "Server running" : `Database ${body.database}`;
+    lamp.className = "lamp " + (resp.ok ? "ok" : "bad");
+  } catch {
+    lamp.textContent = "Server not reachable"; lamp.className = "lamp bad";
+  }
+}
+async function refreshMetrics() {
+  try {
+    const resp = await fetch("/metrics");
+    if (!resp.ok) { setStatus("metrics-status", `Request counts need a token here (HTTP ${resp.status}).`, "bad"); return; }
+    setStatus("metrics-status", "");
+    const text = await resp.text();
+    const rows = [...text.matchAll(/^http_requests_total\{method="([^"]*)",route="([^"]*)",status="(\d+)"\} (\d+)$/gm)];
+    $("metrics").replaceChildren(...rows.map(([, method, route, status, count]) => {
+      const tr = document.createElement("tr");
+      for (const [value, cls] of [[method], [route], [status], [count, "n"]]) {
+        const td = document.createElement("td");
+        td.textContent = value; if (cls) td.className = cls;
+        tr.append(td);
+      }
+      return tr;
+    }));
+    const streams = text.match(/^active_streams (\d+)$/m);
+    $("streams").textContent = "Open streams: " + (streams ? streams[1] : "–");
+  } catch { setStatus("metrics-status", "Request counts not reachable.", "bad"); }
+}
+refreshHealth(); refreshMetrics();
+const healthTimer = setInterval(refreshHealth, 5000);
+const metricsTimer = setInterval(refreshMetrics, 3000);
+</script>
+</body>
+</html>
