@@ -1,4 +1,4 @@
-# Visual Assistant API
+# take-home: Visual Assistant API
 
 A small web service: you upload an image, then ask questions about it.
 This page has everything needed to take the project over: how to start it, open the test page,
