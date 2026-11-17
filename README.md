@@ -29,7 +29,7 @@ git clone https://github.com/andypc93/take-home.git
 cd take-home
 ```
 
-You need Python 3.8 or newer.
+You need Python 3.8 or newer. It was run on 3.8, 3.11, 3.12, 3.13 and 3.14.
 
 **Windows (PowerShell)**
 
@@ -418,7 +418,7 @@ What is missing, most useful first. Section 15 lists the limits; this section sa
 | 4 | Real accounts and keys | Keys are a fixed list read at the start, and are off unless `API_KEYS` is set. No sign-up, no way to cancel one key without a restart | Keep keys in the database (only their hash, as `owner` already is), with an address to create and cancel them, and a limit for each key |
 | 5 | HTTPS, and access from other websites | The service speaks plain HTTP, and a web page on another address cannot call it (no CORS headers) | Add a certificate in nginx. Add CORS headers for the addresses that may call the API |
 | 6 | The missing API addresses | An image cannot be deleted or looked up after the upload; it only expires after 30 days. Stream events have no names, which some clients expect (`created`, `delta`, `completed`) | Add `GET /images/IMAGE_ID` and `DELETE /images/IMAGE_ID`. If named events are wanted, add an `event:` line in `sse_events` in `app.py` |
-| 7 | One-command start and automatic checks | Setup is by hand. `requirements.txt` gives only lowest versions, so a new install can get newer packages than were tested. The `Pipfile` asks for Python 3.13 while `TASK.md` says 3.8 or newer; only 3.11, 3.12 and 3.14 were run | Add a `Dockerfile` and a compose file (service, PostgreSQL, Redis, nginx). Pin exact versions. Run the tests on every change, on each Python version to be supported |
+| 7 | One-command start and automatic checks | Setup is by hand. `requirements.txt` gives only lowest versions, so a new install can get newer packages than were tested. The `Pipfile` asks for Python 3.13, so `pipenv install` as written needs that version, while the other way to install works from 3.8 | Add a `Dockerfile` and a compose file (service, PostgreSQL, Redis, nginx). Pin exact versions. Run the tests on every change, on each Python version to be supported |
 | 8 | Better monitoring | `/metrics` has counts and total time only. There is no way to follow one request through the logs, and nothing warns when things go wrong | Add response-time buckets to `Metrics` in `app.py`, a request id on every log line and in every answer, and alerts on `5xx` answers, `429` answers and `active_streams` |
 | 9 | Check images more deeply | Only the first bytes and the size in the header are checked. Hidden data inside a picture (location, camera) is kept. WebP is refused | Open each image with an image library (Pillow) to prove it is whole, save a clean copy without the hidden data, and add WebP |
 | 10 | Get ready for large size, and prove it | Old data is cleaned inside normal requests. Each copy has its own cache. The load test ran for seconds on one machine with a small database. macOS and AWS S3 itself were never run | Run `flask --app app cleanup` from a scheduler instead. Add an index on `chat_history.created_at`. Move the cache to Redis. Then run `loadtest.py` for hours, from another machine, against a database with millions of rows |
